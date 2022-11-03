@@ -34,6 +34,30 @@ Before building, the following prerequisites must be installed.
 sudo dnf install -y boost-devel eigen3-devel gcc gcc-c++ git gtest-devel meson zlib-devel libzstd-devel
 ```
 
+#### Optional Prerequisites
+
+##### Openssl
+
+OpenDCDiag has been built and tested using Openssl 1.1.X and 3.0.
+Before building and in order to enable extra Openssl content,
+the following prerequisite must be installed:
+
+```console
+# Ubuntu
+sudo apt-get install libssl-dev
+```
+
+```console
+# Fedora:
+sudo dnf install -y openssl-devel
+```
+
+Before building, it is also needed to configure project using following option:
+
+```console
+meson builddir --buildtype=release -Dssl_link_type=dynamic
+```
+
 ### Building
 
 OpenDCDiag is built with the [Meson Build
