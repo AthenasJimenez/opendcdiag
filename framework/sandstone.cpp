@@ -68,6 +68,7 @@
 #include "sandstone_tests.h"
 #include "sandstone_utils.h"
 #include "topology.h"
+#include "gettid.h"
 
 #if SANDSTONE_SSL_BUILD
 #  include "sandstone_ssl.h"
@@ -665,9 +666,11 @@ public:
     virtual void do_wait(std::atomic_int &, int) noexcept;
     virtual void do_wake(std::atomic_int &) noexcept;
     void do_sync() noexcept;
+    void do_cpu_jmp() noexcept;
 
     std::array<AlignedAtomicInt, 2> phases;
     AlignedAtomicInt phase_idx = 0;
+    std::array<AlignedAtomicInt, 32> threads_id; // Fix, don't use hardcoded number
 };
 
 void BarrierThreadSynchronization::init() noexcept
@@ -686,6 +689,8 @@ void BarrierThreadSynchronization::do_sync() noexcept
     int remaining = phase.fetch_add(-1, std::memory_order_relaxed) - 1;
     assert(remaining >= 0);
     assert(remaining < num_cpus());
+    // store id
+    threads_id[thread_num].store(gettid());
     if (remaining > 0) {
         // not the last, so wait
         return do_wait(phase, remaining);
@@ -695,6 +700,10 @@ void BarrierThreadSynchronization::do_sync() noexcept
     idx ^= 1;
     phases[idx].store(num_cpus(), std::memory_order_relaxed);
     phase_idx.store(idx, std::memory_order_relaxed);
+
+    // change logical processor execution
+    do_cpu_jmp();
+
     do_wake(phase);
 }
 
@@ -709,6 +718,23 @@ void BarrierThreadSynchronization::do_wake(std::atomic_int &phase) noexcept
 {
     // release the other threads
     phase.store(-1, std::memory_order_relaxed);
+}
+
+void BarrierThreadSynchronization::do_cpu_jmp() noexcept
+{
+
+    int n_cpus = num_cpus();
+    int cpu_0 = cpu_info[0].cpu_number;
+    for (int i=0; i<n_cpus; i++) {
+        int next_index = (i+1) % n_cpus;
+        int thread_id = threads_id[i].load();
+        int next_cpu = (next_index == 0) ? cpu_0 : cpu_info[next_index].cpu_number;
+        //int next_cpu = i;
+        if (pin_to_logical_processor(LogicalProcessor(next_cpu), current_test->id, thread_id)) {
+            // update cpu_info?
+            log_warning("thread %i running on cpu %i", thread_id, next_cpu); // remove, only for debug
+        }
+    }
 }
 
 class FutexThreadSynchronization : public BarrierThreadSynchronization
